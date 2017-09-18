@@ -1,0 +1,65 @@
+# WARNING: It may still possible to compromise or destroy a running system
+# using commands permitted by these rules even if all of the patterns below
+# work as intended (I'm not sure they do), so only trusted users should be
+# added to the "floorusers" group.
+#
+# Known exploits:
+# - DOS: Detach arbitrary dm-crypt devices.
+# - DOS: Detach arbitrary loopback devices.
+# - DOS: Exhaust loopback devices.
+# - DOS: Exhaust inodes on whichever disk "/dev/" uses.
+# - Privilege escalation: Use losetup to access any file on the system. The
+#   file permissions are not inherited by the loopback device which may be
+#   created with looser access controls than the original file.
+# - Privilege escalation, data loss: If the user knows the password of an
+#   encrypted volume, they can format it or mount the device and access its
+#   contents even if they do not have read or write access to the disk image.
+#   This would be done by using losetup then using "cryptsetup open" to open
+#   the device using a permitted filename pattern.
+#
+# In the rules below, command line options are alphabetized (ASCII byte order),
+# all long options used attached argument (i.e. "--flag=value" and never
+# "--flag value"), all short options use detached arguments (i.e. "-f value"
+# and never "-fvalue") and non-option arguments appear last where possible.
+# This convention makes it easier to figure the argument order needed to invoke
+# a command without having to refer to this file.
+#
+# Tokens in the form of `/^\([A-Z_][A-Z0-9_]*\)$/` are populated using
+# variables from the Floor script before this file is installed.
+
+Cmnd_Alias FLOOR_COMMANDS_SAFE = \
+    /bin/mount (MOUNT_OPTIONS) /dev/mapper/(FILENAME_PREFIX)-?* *, \
+    /bin/umount /dev/mapper/(FILENAME_PREFIX)-?*, \
+    /sbin/cryptsetup --key-file=- --key-size=?* \
+        --uuid=????????-????-????-????-???????????? luksFormat /dev/loop?*, \
+    /sbin/cryptsetup --key-file=- --type=luks open /dev/loop?* *, \
+    /sbin/cryptsetup close [!-]*, \
+    /sbin/cryptsetup status [!-]*, \
+    /sbin/dmsetup ls --target=crypt, \
+    /sbin/losetup --associated=?* --noheadings --output=NAME, \
+    /sbin/losetup --detach=/dev/loop?*, \
+    /sbin/losetup --find --nooverlap --show *, \
+    /sbin/mkfs.ext[234] -E root_owner=*?\:?* -m ?* -q \
+        /dev/mapper/(FILENAME_PREFIX)-????????-????-????-????-????????????
+
+Cmnd_Alias FLOOR_COMMANDS_UNSAFE = \
+    /bin/mount * /dev/mapper/* *[[\:space\:]]*, \
+    /bin/mount * /dev/mapper/* -*, \
+    /bin/mount * /dev/mapper/*[[\:space\:]]* *, \
+    /bin/umount *[[\:space\:]]*, \
+    /sbin/cryptsetup * --key-size=*[!0-9]* --uuid=*, \
+    /sbin/cryptsetup * --uuid=*[!a-fA-F0-9-]* luksFormat *, \
+    /sbin/cryptsetup * luksFormat /dev/loop*[!0-9]*, \
+    /sbin/cryptsetup * open /dev/loop* *[[\:space\:]]*, \
+    /sbin/cryptsetup * open /dev/loop* -*, \
+    /sbin/cryptsetup * open /dev/loop*[!0-9]* *, \
+    /sbin/cryptsetup close *[[\:space\:]]*, \
+    /sbin/losetup * --nooverlap --show *[[\:space\:]]*, \
+    /sbin/losetup * --nooverlap --show -*, \
+    /sbin/losetup --associated=*[[\:space\:]]* * *, \
+    /sbin/losetup --detach=/dev/loop*[!0-9]*, \
+    /sbin/mkfs.ext[234] * -m *[[\:space\:]]* -q *, \
+    /sbin/mkfs.ext[234] * /dev/mapper/(FILENAME_PREFIX)-*[!a-fA-F0-9-]*, \
+    /sbin/mkfs.ext[234] -E root_owner=*[!0-9\:]* -m *
+
+%floorusers ALL = NOPASSWD: FLOOR_COMMANDS_SAFE, PASSWD: FLOOR_COMMANDS_UNSAFE
