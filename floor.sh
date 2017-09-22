@@ -69,7 +69,7 @@ umask 0077
 # Some of the commands used by this script are located in folders generally
 # reserved for superuser commands even though some of their features can be
 # used without being root.
-PATH="$PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"
 
 # Miscellaneous variables that should generally never be changed:
 #
