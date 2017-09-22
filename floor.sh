@@ -179,9 +179,7 @@ dd()
 #
 atexit()
 {
-    command="$1"
-
-    trap "set +e +u; exec >/dev/null 2>&1; { ${command%;}; } || true" EXIT INT
+    trap "set +e +u; exec >/dev/null 2>&1; { ${1%;}; } || true" EXIT INT
 }
 
 # Compute the SHA-512 hash of a file and display it.
