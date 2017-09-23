@@ -46,8 +46,9 @@ Supported Systems
 
 The shell script syntax is POSIX-compliant, and any commands used by the script
 that are also prescribed by POSIX are only invoked with POSIX-specified command
-line arguments / features. Floor has been explicitly tested with the following
-tools on Debian Linux:
+line arguments / features. The tool should have no problem handling filenames
+that contain spaces or start with "-"; please send reports of any such issues.
+Floor has been explicitly tested with the following tools on Debian Linux:
 
 Shells:
 - [Bash][bash]
@@ -75,8 +76,10 @@ least commonly available via distro package managers:
 - _sudo(8)_
 - _umount(8)_ (util-linux, busybox, sbase)
 
-The tool should have no problem handling filenames that contain spaces or start
-with "-"; please send reports of any such issues.
+Floor has the ability to create a packaged version of itself that includes the
+secret. [GNU Privacy Guard (GPG)][gpg] must be installed to encrypt the secret
+before baking it into the script, and any system running the packaged script
+will need to have GPG installed to decrypt the secret.
 
   [bash]: https://www.gnu.org/software/bash/
   [dash]: http://gondor.apana.org.au/~herbert/dash/
@@ -87,6 +90,7 @@ with "-"; please send reports of any such issues.
   [sbase]: https://core.suckless.org/sbase
   [ubase]: https://core.suckless.org/ubase
   [util-linux]: https://git.kernel.org/pub/scm/utils/util-linux/util-linux.git/
+  [gpg]: https://www.gnupg.org/
 
 Installation and Other Make Targets
 -----------------------------------
@@ -122,8 +126,7 @@ must be run once before new volumes can be created.
 
 #### sanity ####
 
-Validate the checksum of the secret. This is done implicitly whenever a new
-volume is created.
+Validate the checksum of the secret.
 
 #### new _FILENAME_ _SIZE_ ####
 
@@ -153,11 +156,24 @@ Unmount a volume. The IDENTIFIER can be a loopback device, a /dev/mapper/*
 file, mount point or volume path. For loopback and /dev/mapper/* devices, only
 the basename needs to be specified, but full paths are also accepted.
 
+#### package _EXPORT_METHOD_ _OUTPUT_FILENAME_ ####
+
+Create a Floor script that has the secret built into it but otherwise functions
+like the canonical script. The export method controls how the secret is saved
+in the script. Supported methods are "password" which uses GNU Privacy Guard
+(GPG) to encrypt the secret with a symmetric key, "gpg" which also uses GPG,
+but with arguments defined with "--gpg-args" and "plain" which stores the
+secret in unencrypted plain-text.
+
 ### Options (and Defaults) ###
 
 #### --help ####
 
 Display this documentation and exit.
+
+#### --gpg-args=_ARGUMENTS_ ("--encrypt") ####
+
+Set the command line arguments used with GPG by "package gpg ...".
 
 #### --mkfs=_COMMAND_ ("mkfs.ext4") ####
 
@@ -181,7 +197,10 @@ and GID of the current user.
 
 #### --secret=_FILENAME_ (`$HOME/.floor.secret`) ####
 
-File used to store the secret used to generate volume keys.
+File used to store the secret used to generate volume keys. If the value of
+this option is an empty string — the default for scripts created with "package"
+— or the file does not exist, any operations that depend on the secret will use
+the packaged secret if one is defined.
 
 #### --secret-size=_BYTES_ (768) ####
 

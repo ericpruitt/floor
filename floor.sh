@@ -9,8 +9,7 @@ Commands:
         Generate the secret. This command fails if the secret file already
         exists. This must be run once before new volumes can be created.
   sanity
-        Validate the checksum of the secret. This is done implicitly whenever a
-        new volume is created.
+        Validate the checksum of the secret.
   new FILENAME SIZE
         Create a new encrypted volume of a given size. A valid size is an
         integer with an optional unit. Valid units are B, K (or k), M, G and T.
@@ -30,10 +29,20 @@ Commands:
         /dev/mapper/* file, mount point or volume path. For loopback and
         /dev/mapper/* devices, only the basename needs to be specified, but
         full paths are also accepted.
+  package EXPORT_METHOD OUTPUT_FILENAME
+        Create a Floor script that has the secret built into it but otherwise
+        functions like the canonical script. The export method controls how the
+        secret is saved in the script. Supported methods are \"password\" which
+        uses GNU Privacy Guard (GPG) to encrypt the secret with a symmetric
+        key, \"gpg\" which also uses GPG, but with arguments defined with
+        \"--gpg-args\" and \"plain\" which stores the secret in unencrypted
+        plain-text.
 
 Options (and Defaults):
   --help
         Display this documentation and exit.
+  --gpg-args=ARGUMENTS ($DEFAULT_GPG_ARGS)
+        Set the command line arguments used with GPG by \"package gpg ...\".
   --mkfs=COMMAND ($DEFAULT_MKFS)
         Command used to create the filesystem of new volumes. Supported values
         are \"mkfs.ext2\", \"mkfs.ext3\" and \"mkfs.ext4\".
@@ -49,7 +58,11 @@ Options (and Defaults):
         Owner of the root directory of newly created volumes. This defaults to
         the UID and GID of the current user.
   --secret=FILENAME ($(short_home "$DEFAULT_SECRET"))
-        File used to store the secret used to generate volume keys.
+        File used to store the secret used to generate volume keys. If the
+        value of this option is an empty string -- the default for scripts
+        created with \"package\" -- or the file does not exist, any operations
+        that depend on the secret will use the packaged secret if one is
+        defined.
   --secret-size=BYTES ($DEFAULT_SECRET_SIZE)
         Size in bytes of the secret. This value is only used when the \"setup\"
         command is run. The minimum is $MINIMUM_SECRET_SIZE.
@@ -83,6 +96,9 @@ readonly FILENAME_PREFIX="floor"
 readonly MINIMUM_SECRET_SIZE=50
 # - Options used when mounting a volume.
 readonly MOUNT_OPTIONS="-o noauto,nodev,nosuid"
+# - Checksum of the secret packaged with this script. This will be an empty
+#   string if there is no packaged secret.
+readonly SECRET_CHECKSUM=""
 # - Command used to invoke this script.
 readonly SELF="${0##*/}"
 # - Volumes that have passwords have the UUID version set to this value so
@@ -98,16 +114,21 @@ readonly ZERO_LENGTH_INPUT_SHA512="cf83e1357eefb8bdf1542850d66d8007d620e4050b571
 test "${GID+defined}" || readonly GID="$(id -g)"
 test "${UID+defined}" || readonly UID="$(id -u)"
 
+# When the script has been packaged with a secret, it should be used by
+# default, so the default value of "--secret" is changed to an empty string.
+test "$SECRET_CHECKSUM" || DEFAULT_SECRET="$HOME/.$FILENAME_PREFIX.secret"
+
 # In the descriptions below, let `$SUFFIX` be a command line option
 # capitalized, stripped of its leading dashes and any remaining dashes replaced
 # with underscores:
 #
 # - Variables for options that require arguments use the form `OPTION_$SUFFIX`.
 #   These can be initialized with any value including empty strings.
+OPTION_GPG_ARGS="${DEFAULT_GPG_ARGS:=--encrypt}"
 OPTION_MKFS="${DEFAULT_MKFS:=mkfs.ext4}"
 OPTION_RANDOM="${DEFAULT_RANDOM:=/dev/urandom}"
 OPTION_ROOT_OWNER="$UID:$GID"
-OPTION_SECRET="${DEFAULT_SECRET:=$HOME/.$FILENAME_PREFIX.secret}"
+OPTION_SECRET="${DEFAULT_SECRET:=}"
 OPTION_SECRET_SIZE="${DEFAULT_SECRET_SIZE:=768}"
 OPTION_SHA512=""
 #
@@ -179,6 +200,7 @@ dd()
 #
 atexit()
 {
+    test "${1:--}" = "-" && trap - EXIT INT && return
     trap "set +e +u; exec >/dev/null 2>&1; { ${1%;}; } || true" EXIT INT
 }
 
@@ -227,6 +249,39 @@ checksum()
     '
 )
 
+# Write the contents of the packaged secret to standard output. If no secret
+# has been packaged with the script, this function will fail.
+#
+packaged_secret()
+{
+    test "$SECRET_CHECKSUM" || die "$0: no secret packaged with script"
+}
+
+# Write the secret data to standard output. If "OPTION_SECRET" a non-empty
+# string, the contents of the file it names are used as the secret data. If
+# "OPTION_SECRET" is an empty string, the secret packaged with the script is
+# used. This function will fail if "OPTION_SECRET" names a file that does not
+# exist and there is no packaged secret or if the checksum of the secret data
+# does not match the expected value.
+#
+get_secret()
+{
+    if [ -e "$OPTION_SECRET" ]; then
+        if [ "$(checksum "$OPTION_SECRET")" = \
+          "$(cat "$OPTION_SECRET.checksum")" ]; then
+            cat "$OPTION_SECRET"
+        else
+            die "$OPTION_SECRET: secret checksum does not match expected value"
+        fi
+    elif [ -z "$SECRET_CHECKSUM" ]; then
+        die "missing secret file, and no packaged secret found"
+    elif [ "$(packaged_secret | checksum)" = "$SECRET_CHECKSUM" ]; then
+        packaged_secret
+    else
+        die "packaged secret's checksum does not match expected value"
+    fi
+}
+
 # Make secret that will be used used for generating volume key.
 #
 # Arguments:
@@ -253,16 +308,6 @@ make_secret()
 
     checksum "$temp_file" > "$OPTION_SECRET.checksum"
     mv "$temp_file" "$OPTION_SECRET"
-)
-
-# Verify that the secret's expected and actual checksums are the same.
-#
-verify_secret_checksum()
-(
-    actual="$(checksum "$OPTION_SECRET")"
-    expected="$(cat "$OPTION_SECRET.checksum")"
-    test "$actual" != "$expected" || return 0
-    die "$OPTION_SECRET: checksum is incorrect"
 )
 
 # Normalize a UUID by deleting dashes, newlines and making all letters
@@ -418,11 +463,11 @@ key_for_uuid()
     esac
 
     if [ "$getpass_mode" != "noop" ]; then
-        no_password="$({ raw "$uuid" && cat "$OPTION_SECRET"; } | checksum)"
+        no_password="$({ raw "$uuid" && get_secret; } | checksum)"
     fi
 
     no_secret="$(raw "$uuid" | checksum)"
-    key="$({ raw "$uuid" && getpass "$getpass_mode" && cat "$OPTION_SECRET"
+    key="$({ raw "$uuid" && getpass "$getpass_mode" && get_secret
            } | checksum)"
 
     if [ "$key" = "$no_secret" ]; then
@@ -640,6 +685,78 @@ short_home()
 
     HOME="${HOME%/}/"
     test -n "${path##"$HOME"*}" && echo "$path" || echo "~/${path#"$HOME"}"
+)
+
+# Generate a copy of this script that has the secret built into it.
+#
+# Arguments:
+# - $1: Secret export method which controls how the secret is stored inside the
+#   new script. This can be "plain" (unencrypted plain-text) "password"
+#   (encrypted with a user-defined password) or "gpg" (encrypted with GPG using
+#   with user-configurable flags).
+# - $2: Output path for the generated script.
+#
+package()
+(
+    secret_export_method="$1"
+    path="$2"
+
+    case "$secret_export_method" in
+      gpg)      filter='| gpg --quiet $OPTION_GPG_ARGS' ;;
+      password) filter="| gpg --quiet --symmetric --no-default-recipient" ;;
+      plain)    filter="" ;;
+
+      *)
+        die "dump_secret: unknown export method \"$secret_export_method\""
+      ;;
+    esac
+
+    (set -o noclobber && > "$path")
+    atexit 'rm -f "$path"'
+    chmod 700 "$path"
+
+    checksum="$(get_secret >/dev/null && get_secret | checksum)"
+    bytes="$(eval "get_secret $filter | od -A n -t u1 -v")"
+    test -n "$bytes"
+
+    command="printf '$(printf '\\\\%03o' $bytes)'"
+    case "$filter" in
+      *gpg*)
+        command="$command | gpg --decrypt --quiet"
+      ;;
+    esac
+
+    sed -f /dev/fd/0 "$0" > "$path" << ____SED
+    # Fill in the value of SECRET_CHECKSUM.
+    s/^\\(readonly SECRET_CHECKSUM=\\).*$/\\1"$checksum"/
+
+    # Add the command for writing the secret to packaged_secret.
+    /^packaged_secret()$/,/^[})]$/ {
+        /printf/d
+        / die /{
+            a\\
+            $command
+        }
+    }
+____SED
+
+    chmod 500 "$path"
+    uuid="$(uuid 4)"
+    expected_key="$(key_for_uuid "$uuid" 0)"
+    displayed_path="$(short_home "$path")"
+
+    atexit -
+    echo "testing the packaged script..."
+    test -z "${path##*/*}" || path="$PWD/$path"
+    key="$("$path" --secret="" key "$uuid")"
+
+    if [ "$key" != "$expected_key" ]; then
+        die "sanity check error: the key generated by the original script" \
+            "and the new script for UUID $uuid differ; the broken script" \
+            "will not be deleted since it may be needed to debug the problem"
+    fi
+
+    echo "no problems detected; packaged script written to $displayed_path"
 )
 
 # Check to see if a block device is mounted. If the device is mounted, this
@@ -897,14 +1014,21 @@ main()
       sanity)
         check_usage
 
-        verify_secret_checksum
-        echo "$OPTION_SECRET: no problems detected"
+        get_secret > /dev/null
+        if [ "$OPTION_SECRET" ]; then
+            echo "$OPTION_SECRET: no problems detected"
+        else
+            echo "no problems detected with packaged secret"
+        fi
       ;;
 
       new)
         check_usage "volume path" "size"
 
-        verify_secret_checksum
+        if [ -z "$OPTION_SECRET" ] && [ "$SECRET_CHECKSUM" ]; then
+            echo "$SELF: WARNING: This volume will be created using a secret" \
+                 "that has been packaged into $(short_home "$0")" >&2
+        fi
         create_volume "$volume_path" "$size"
       ;;
 
@@ -919,7 +1043,6 @@ main()
             die "$text"
         fi
 
-        verify_secret_checksum
         key_for_uuid "$uuid" 0
         test ! -t 1 || echo
       ;;
@@ -940,6 +1063,12 @@ main()
         check_usage "identifier"
 
         volume_action unmount "$identifier"
+      ;;
+
+      package)
+        check_usage "export method" "output filename"
+
+        package "$export_method" "$output_filename"
       ;;
 
       *)
