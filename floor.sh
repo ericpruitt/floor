@@ -149,7 +149,7 @@ IS_SET_PASSWORD=""
 #
 die()
 {
-    test -z "${1:-}" || echo "$SELF:" "$@" >&2 && exit 1
+    test -z "${1:-}" || say "$SELF:" "$@" >&2 && exit 1
 }
 
 # Display a message without adding a terminating newline.
@@ -159,6 +159,18 @@ die()
 raw()
 {
     printf "%s" "$1"
+}
+
+# Display text. This works like echo, but it does not support any command line
+# options (e.g. "-e" or "-n") or escape sequences.
+#
+say()
+{
+    case "$#" in
+      0) printf "\n" ;;
+      1) printf "%s\n" "$1" ;;
+      *) printf "%s" "$1" && shift && printf " %s" "$@" && printf "\n" ;;
+    esac
 }
 
 # Generate and display a shell-safe representation of a string. The new string
@@ -173,7 +185,7 @@ munge()
 
     test -n "$name" || die "cannot munge empty string"
     name="$(raw "$name" | tr -d " \t\r\n" | sed "s/^-*//")"
-    echo "${name:-x}"
+    say "${name:-x}"
 )
 
 # Quieter version of _dd(1)_ that only writes to standard error if there is a
@@ -220,7 +232,7 @@ checksum()
         die "checksum: $1: argument cannot be a folder"
     fi
 
-    eval "cat $(test -z "${1-}" || echo '"$1"')" \
+    eval "cat $(test -z "${1-}" || say '"$1"')" \
     | sh -c " $OPTION_SHA512" \
     | awk -v SHA512="$OPTION_SHA512" '
         BEGIN {
@@ -320,14 +332,14 @@ normalize_uuid()
 (
     maybe_uuid="$1"
 
-    uuid="$(echo "$maybe_uuid" | tr "A-F" "a-f" | tr -d "-")"
+    uuid="$(say "$maybe_uuid" | tr "A-F" "a-f" | tr -d "-")"
 
     case "$uuid" in
       *[!0-9a-f]*)
         die "$maybe_uuid: not a UUID; one or more invalid characters found"
       ;;
       ????????????????????????????????)
-        echo "$uuid"
+        say "$uuid"
       ;;
       *)
         die "$maybe_uuid: not a UUID; incorrect length"
@@ -381,7 +393,7 @@ uuid()
     done
 
     normalize_uuid "$uuid" >/dev/null || die "uuid: generated invalid UUID"
-    echo "$uuid"
+    say "$uuid"
 )
 
 # Display the version of a given UUID.
@@ -393,7 +405,7 @@ uuid_version()
 (
     uuid="$(normalize_uuid "$1")"
 
-    echo "$((0x$(echo "$uuid" | cut -b 13) & 0xf))"
+    say "$((0x$(say "$uuid" | cut -b 13) & 0xf))"
 )
 
 # Get a password (user-provided salt) and write it to standard output.
@@ -426,13 +438,13 @@ getpass()
     stty -echo
     raw "Password: " >&2
     read -r password
-    echo >&2
+    say >&2
     test -n "$password" || die "no password entered"
 
     if [ "$mode" = "confirm" ]; then
         raw "Re-enter password to confirm: " >&2
         read -r password2
-        echo >&2
+        say >&2
         test "$password" = "$password2" || die "the passwords did not match"
     fi
 
@@ -531,9 +543,9 @@ create_volume()
 
     uuid="$(uuid $((IS_SET_PASSWORD ? UUID_VERSION_IF_NEEDS_PASSWORD : 4)))"
     key="$(key_for_uuid "$uuid" 1)"
-    echo "UUID: $uuid"
+    say "UUID: $uuid"
 
-    echo "creating disk image..."
+    say "creating disk image..."
     dd if="/dev/urandom" of="$path" bs="$bs" count="$count"
 
     # If the volume path contains spaces, create a symlink to it immediately
@@ -548,12 +560,12 @@ create_volume()
 
     loopback="$(sudo -n losetup --find --nooverlap --show "${symlink:-$path}")"
 
-    echo "configuring LUKS..."
+    say "configuring LUKS..."
     raw "$key" \
     | sudo -n cryptsetup --key-file="-" --key-size=512 --uuid="$uuid" \
         luksFormat "$loopback"
 
-    echo "formatting device with $OPTION_MKFS..."
+    say "formatting device with $OPTION_MKFS..."
     basename="$(basename "$path")"
     dm_device="$FILENAME_PREFIX-$uuid"
     raw "$key" \
@@ -565,7 +577,7 @@ create_volume()
 
     displayed_path="$(short_home "$path")"
     unset path
-    echo "finished creating $displayed_path"
+    say "finished creating $displayed_path"
 )
 
 # Open and mount an encrypted volume.
@@ -684,7 +696,7 @@ short_home()
     path="$1"
 
     HOME="${HOME%/}/"
-    test -n "${path##"$HOME"*}" && echo "$path" || echo "~/${path#"$HOME"}"
+    test -n "${path##"$HOME"*}" && say "$path" || say "~/${path#"$HOME"}"
 )
 
 # Generate a copy of this script that has the secret built into it.
@@ -746,7 +758,7 @@ ____SED
     displayed_path="$(short_home "$path")"
 
     atexit -
-    echo "testing the packaged script..."
+    say "testing the packaged script..."
     test -z "${path##*/*}" || path="$PWD/$path"
     key="$("$path" --secret="" key "$uuid")"
 
@@ -756,7 +768,7 @@ ____SED
             "will not be deleted since it may be needed to debug the problem"
     fi
 
-    echo "no problems detected; packaged script written to $displayed_path"
+    say "no problems detected; packaged script written to $displayed_path"
 )
 
 # Check to see if a block device is mounted. If the device is mounted, this
@@ -907,18 +919,18 @@ list_mounted_volumes()
 #
 # Arguments:
 # - $@: Argument descriptions. These are transformed into a variable name with
-#   `echo "$1" | tr "A-Z -" "a-z__"`.
+#   `printf "%s" "$1" | tr "A-Z -" "a-z__"`.
 #
 check_usage()
 {
     if [ "$ARGN" -ne "$#" ]; then
         die "Usage: $SELF $ARGV0" $(printf "%s\n" "$@" | tr "a-z -" "A-Z__") \
-            "-- $# argument$(test "$#" -eq 1 || echo "s") needed, not $ARGN"
+            "-- $# argument$(test "$#" -eq 1 || say "s") needed, not $ARGN"
     fi
 
     while [ "$#" -gt 0 ]; do
         eval 'test "$ARGV'$((ARGN - $# + 1))'"' || die "$1 cannot be empty"
-        eval "$(echo "$1" | tr "A-Z -" "a-z__")=\"\$ARGV$((ARGN - $# + 1))\""
+        eval "$(say "$1" | tr "A-Z -" "a-z__")=\"\$ARGV$((ARGN - $# + 1))\""
         shift
     done
 }
@@ -954,7 +966,7 @@ argparse()
         # The value of "$no_arg" causes certain patterns to (not) much which is
         # used to determine if a flag is valid and how to handle setting its
         # value.
-        suffix="$(echo "${flag#??}" | tr a-z- A-Z_)"
+        suffix="$(say "${flag#??}" | tr a-z- A-Z_)"
         case " $optspec " in
           *" $flag$no_arg? "*)  die "$flag: no argument required" ;;
           *" $flag? "*)         eval "IS_SET_$suffix=1"; continue ;;
@@ -1008,7 +1020,7 @@ main()
         check_usage
 
         make_secret
-        echo "${OPTION_SECRET_SIZE}B written to $(short_home "$OPTION_SECRET")"
+        say "${OPTION_SECRET_SIZE}B written to $(short_home "$OPTION_SECRET")"
       ;;
 
       sanity)
@@ -1016,9 +1028,9 @@ main()
 
         get_secret > /dev/null
         if [ "$OPTION_SECRET" ]; then
-            echo "$OPTION_SECRET: no problems detected"
+            say "$OPTION_SECRET: no problems detected"
         else
-            echo "no problems detected with packaged secret"
+            say "no problems detected with packaged secret"
         fi
       ;;
 
@@ -1026,7 +1038,7 @@ main()
         check_usage "volume path" "size"
 
         if [ -z "$OPTION_SECRET" ] && [ "$SECRET_CHECKSUM" ]; then
-            echo "$SELF: WARNING: This volume will be created using a secret" \
+            say "$SELF: WARNING: This volume will be created using a secret" \
                  "that has been packaged into $(short_home "$0")" >&2
         fi
         create_volume "$volume_path" "$size"
@@ -1044,7 +1056,7 @@ main()
         fi
 
         key_for_uuid "$uuid" 0
-        test ! -t 1 || echo
+        test ! -t 1 || say
       ;;
 
       mount)
