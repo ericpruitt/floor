@@ -408,50 +408,25 @@ uuid_version()
     say "$((0x$(say "$uuid" | cut -b 13) & 0xf))"
 )
 
-# Get a password (user-provided salt) and write it to standard output.
+# Encode data from standard input as a _printf(1)_-compatible string. This is
+# useful for storing binary data in shell variables which typically do not
+# support NUL bytes.
 #
+printf_encode_stdin()
+{
+    test -t 0 && die "printf_encode_stdin: standard input is a terminal"
+    _printf_encode_stdin_variable_bytes="$(od -A n -t u1 -v)"
+    test -n "$_printf_encode_stdin_variable_bytes"
+    printf '\\%03o' $_printf_encode_stdin_variable_bytes
+}
+
+# Compute the key for a given UUID and display it. The key is generated using
+# an HMAC-like method; in pseudocode:
 #
-# Arguments:
-# - $1: Mode of operation:
-#   - If the mode is "noop", this function generates no output.
-#   - If standard input is not a terminal, the data from standard input is
-#     copied to standard output verbatim.
-#   - If standard input is a terminal and the mode is "prompt", the user is
-#     prompted to enter the password once. If the mode is "confirm", the user
-#     will be asked to enter the password a second time to confirm the choice.
-#
-getpass()
-(
-    mode="$1"
-
-    case "$mode" in
-      prompt|confirm|noop) ;;
-      *)
-        die "getpass: \"$mode\" is not a recognized mode"
-      ;;
-    esac
-
-    test "$mode" = "noop" && return
-    test -t 0 || exec cat
-    atexit "stty $(stty -g)"
-
-    stty -echo
-    raw "Password: " >&2
-    read -r password
-    say >&2
-    test -n "$password" || die "no password entered"
-
-    if [ "$mode" = "confirm" ]; then
-        raw "Re-enter password to confirm: " >&2
-        read -r password2
-        say >&2
-        test "$password" = "$password2" || die "the passwords did not match"
-    fi
-
-    raw "$password"
-)
-
-# Compute the key for a given UUID and display it.
+#   IF Volume_Has_Password THEN
+#       Secret := Concatenate(Password, Secret)
+#   END IF
+#   Key := SHA512(Secret, SHA512(Concatenate(Secret, UUID)))
 #
 # Arguments:
 # - $1: UUID.
@@ -464,31 +439,45 @@ key_for_uuid()
     is_new="$2"
 
     uuid_version="$(uuid_version "$uuid")"
+    secret_bytes="$(get_secret | printf_encode_stdin)"
 
-    case "$is_new:$uuid_version" in
-      0:$UUID_VERSION_IF_NEEDS_PASSWORD)    getpass_mode="prompt" ;;
-      1:$UUID_VERSION_IF_NEEDS_PASSWORD)    getpass_mode="confirm" ;;
-      [01]:[0-9]|[01]:1[0-5])               getpass_mode="noop" ;;
-      *)
-        die "invalid UUID version ($uuid_version) / newness ($is_new)"
-      ;;
-    esac
+    # Do nothing if the volume doesn't need a password.
+    if [ "$uuid_version" != "$UUID_VERSION_IF_NEEDS_PASSWORD" ]; then
+        password_bytes=""
 
-    if [ "$getpass_mode" != "noop" ]; then
-        no_password="$({ raw "$uuid" && get_secret; } | checksum)"
+    # If the volume needs a password and standard input is a terminal, prompt
+    # for the password.
+    elif [ -t 0 ]; then
+        atexit "stty $(stty -g)"
+        stty -echo
+
+        while :; do
+            raw "Password: " >&2
+            read -r password
+            say >&2
+            test -n "$password" || die "no password entered"
+
+            # If this is a new volume, prompt the user for the password
+            # again to confirm its value.
+            test "$is_new" -eq 0 && break
+
+            raw "Re-enter password to confirm: " >&2
+            read -r password2
+            say >&2
+
+            test "$password" = "$password2" && break
+            say "$SELF: the passwords were not the same; please try again" >&2
+        done
+
+        password_bytes="$(raw "$password" | printf_encode_stdin)"
+
+    # Otherwise, read the raw bytes from standard input.
+    else
+        password_bytes="$(printf_encode_stdin)"
     fi
 
-    no_secret="$(raw "$uuid" | checksum)"
-    key="$({ raw "$uuid" && getpass "$getpass_mode" && get_secret
-           } | checksum)"
-
-    if [ "$key" = "$no_secret" ]; then
-        die "could not generate volume key"
-    elif [ "$key" = "${no_password:-}" ]; then
-        die "password read from standard input was empty"
-    fi
-
-    raw "$key"
+    inner_hash="$(printf "$password_bytes$secret_bytes$uuid" | checksum)"
+    printf "$password_bytes$secret_bytes$inner_hash" | checksum
 )
 
 # Create a new encrypted volume.
