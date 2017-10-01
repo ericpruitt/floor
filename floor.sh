@@ -106,8 +106,8 @@ readonly SELF="${0##*/}"
 #   should not be changed since existing volumes would need their UUIDs
 #   updated.
 readonly UUID_VERSION_IF_NEEDS_PASSWORD=0
-# - This is used as a test vector to verify that the "checksum" function works
-#   as expected.
+# - This is used as a test vector to verify that the "hash" function works as
+#   expected.
 readonly ZERO_LENGTH_INPUT_SHA512="cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"
 # - User ID and group ID. Since the shell may set these, they are only set if
 #   they are not already defined.
@@ -222,14 +222,14 @@ atexit()
 # - $1: Optional argument that is the name of the file to be hashed. When this
 #   argument is unspecified, data is read from standard input.
 #
-checksum()
+hash()
 (
     if [ "${1:--}" = "-" ]; then
-        test -t 0 && die "checksum: standard input is a terminal"
+        test -t 0 && die "hash: standard input is a terminal"
     elif ! [ -e "$1" ]; then
-        die "checksum: $1: file not found"
+        die "hash: $1: file not found"
     elif [ -d "$1" ]; then
-        die "checksum: $1: argument cannot be a folder"
+        die "hash: $1: argument cannot be a folder"
     fi
 
     eval "cat $(test -z "${1-}" || say '"$1"')" \
@@ -254,7 +254,7 @@ checksum()
                 exit
             }
 
-            print "checksum: no hash in output of \"" SHA512 "\"" > "/dev/fd/2"
+            print "hash: no hash in output of \"" SHA512 "\"" > "/dev/fd/2"
             close("/dev/fd/2")
             exit exit_status
         }
@@ -273,13 +273,13 @@ packaged_secret()
 # string, the contents of the file it names are used as the secret data. If
 # "OPTION_SECRET" is an empty string, the secret packaged with the script is
 # used. This function will fail if "OPTION_SECRET" names a file that does not
-# exist and there is no packaged secret or if the checksum of the secret data
-# does not match the expected value.
+# exist and there is no packaged secret or if the hash of the secret data does
+# not match the expected value.
 #
 get_secret()
 {
     if [ -e "$OPTION_SECRET" ]; then
-        if [ "$(checksum "$OPTION_SECRET")" = \
+        if [ "$(hash "$OPTION_SECRET")" = \
           "$(cat "$OPTION_SECRET.checksum")" ]; then
             cat "$OPTION_SECRET"
         else
@@ -287,7 +287,7 @@ get_secret()
         fi
     elif [ -z "$SECRET_CHECKSUM" ]; then
         die "missing secret file, and no packaged secret found"
-    elif [ "$(packaged_secret | checksum)" = "$SECRET_CHECKSUM" ]; then
+    elif [ "$(packaged_secret | hash)" = "$SECRET_CHECKSUM" ]; then
         packaged_secret
     else
         die "packaged secret's checksum does not match expected value"
@@ -318,7 +318,7 @@ make_secret()
         die "generated secret was ${size}B instead of ${OPTION_SECRET_SIZE}B"
     fi
 
-    checksum "$temp_file" > "$OPTION_SECRET.checksum"
+    hash "$temp_file" > "$OPTION_SECRET.checksum"
     mv "$temp_file" "$OPTION_SECRET"
 )
 
@@ -476,8 +476,8 @@ key_for_uuid()
         password_bytes="$(printf_encode_stdin)"
     fi
 
-    inner_hash="$(printf "$password_bytes$secret_bytes$uuid" | checksum)"
-    printf "$password_bytes$secret_bytes$inner_hash" | checksum
+    inner_hash="$(printf "$password_bytes$secret_bytes$uuid" | hash)"
+    printf "$password_bytes$secret_bytes$inner_hash" | hash
 )
 
 # Create a new encrypted volume.
@@ -716,7 +716,7 @@ package()
     atexit 'rm -f "$path"'
     chmod 700 "$path"
 
-    checksum="$(get_secret >/dev/null && get_secret | checksum)"
+    checksum="$(get_secret >/dev/null && get_secret | hash)"
     bytes="$(eval "get_secret $filter | od -A n -t u1 -v")"
     test -n "$bytes"
 
@@ -996,7 +996,7 @@ main()
         OPTION_SHA512="sha512sum"
     fi
 
-    if [ "$(printf "" | checksum)" != "$ZERO_LENGTH_INPUT_SHA512" ]; then
+    if [ "$(printf "" | hash)" != "$ZERO_LENGTH_INPUT_SHA512" ]; then
         die "\"$OPTION_SHA512\" did not output correct hash for test vector"
     fi
 
