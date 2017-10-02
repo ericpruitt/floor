@@ -944,13 +944,16 @@ show_docs()
 
     results="$(
         for arg in "$@"; do
+            test "$arg" = "--" && continue
+            arg="${arg%%=*}" && arg="${arg#--}"
             case "${arg:- }" in
               # Map command aliases to canonical forms.
               ls)       arg="list" ;;
               umount)   arg="unmount" ;;
 
               *[!0-9a-zA-Z-]*)
-                die "help: \"$arg\" is not a valid command or option name"
+                say "$SELF: \"$arg\" is not a valid command or option name" >&2
+                continue
               ;;
             esac
 
@@ -972,12 +975,8 @@ show_docs()
 argparse()
 {
     ARGC=0
-
-    if [ "${1:-}" = "help" ]; then
-        shift
-        show_docs "$@"
-        exit
-    fi
+    show_docs_for=""
+    test "${1:-}" = "help" && set -- "$1" -- "$@"
 
     while [ "$#" -gt 0 ]; do
         arg="$1" && shift
@@ -991,6 +990,8 @@ argparse()
           *)        no_arg=1; flag="$arg" ;;
         esac
 
+        test "$flag" = "--help" || show_docs_for="$show_docs_for $flag"
+
         # This generate a whitespace separated list of the valid flag names
         # with options that take arguments ending in "=" while toggles end in
         # "?" e.g. "OPTION_ABC IS_SET_XYZ" become "--abc= --xyz?".
@@ -1000,8 +1001,6 @@ argparse()
                      -e 's/^IS_SET_\([^=]*\)=.*/--\1?/p' \
             | tr "A-Z_\n" "a-z- "
         )"
-
-        test "$flag" = "--help" || help_topics="${help_topics:-} $flag"
 
         # The value of "$no_arg" causes certain patterns to (not) much which is
         # used to determine if a flag is valid and how to handle setting its
@@ -1028,35 +1027,48 @@ argparse()
     done
 
     ARGN="$((ARGC - 1))"
-    set -- ${help_topics:-}
-    unset arg flag help_topics no_arg options_done optspec suffix value
+    set -- $show_docs_for
+    unset arg flag no_arg options_done optspec suffix show_docs_for value
 
     if [ "$IS_SET_HELP" ]; then
-        test "${ARGV0+defined}" && set -- "$ARGV0" "$@"
-        show_docs "$@"
-        exit
-    fi
-}
-
-main()
-(
-    argparse "$@"
-
-    test "$ARGC" -ge 1 || die "no command given; try \"$SELF help\""
-
-    if [ -n "$OPTION_SHA512" ]; then
+        IS_SET_HELP=
+        eval "argparse help $(
+            i=0 && while [ "$i" -lt "$ARGC" ]; do
+                raw "\"\$ARGV$i\" " && i="$((i + 1))"
+            done
+            say '"$@"'
+        )"
+    elif [ -n "$OPTION_SHA512" ]; then
         : # User provided an SHA-512 command.
     elif command -v openssl >/dev/null 2>&1; then
         OPTION_SHA512="openssl dgst -sha512"
     elif command -v sha512sum >/dev/null 2>&1; then
         OPTION_SHA512="sha512sum"
+    else
+        die "no supported SHA-512 hashing utility found; please set --sha512"
     fi
+}
+
+# Execute code for a specific command. This should be called after "argparse"
+# which sets a number of global variables that affect how the script runs.
+#
+dispatch()
+(
+    test "$ARGC" -ge 1 || die "no command given; try \"$SELF help\""
 
     if [ "$(printf "" | hash)" != "$ZERO_LENGTH_INPUT_SHA512" ]; then
         die "\"$OPTION_SHA512\" did not output correct hash for test vector"
     fi
 
     case "$ARGV0" in
+      help)
+        eval "show_docs $(
+            i=1 && while [ "$i" -lt "$ARGN" ]; do
+                i="$((i + 1))" && raw "\"\$ARGV$i\" "
+            done
+        )"
+      ;;
+
       setup)
         check_usage
 
@@ -1129,6 +1141,11 @@ main()
       ;;
     esac
 )
+
+main()
+{
+    argparse "$@" && dispatch
+}
 
 # Run the main function if $MAIN is true or unset.
 ! "${MAIN:-true}" || main "$@"
