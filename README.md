@@ -115,9 +115,12 @@ Synopsis: `floor COMMAND [OPTION]... [...]`
 
 ### Commands ###
 
-#### help ####
+#### help [COMMAND_OR_OPTION]... ####
 
-Display this documentation and exit.
+Display documentation and exit. If any command or option names are given as
+arguments, only relevant documentation will be displayed. For example, "floor
+help package --secret" will display documentation for the "package" command and
+the "--secret" option.
 
 #### setup ####
 
@@ -169,7 +172,10 @@ secret in unencrypted plain-text.
 
 #### --help ####
 
-Display this documentation and exit.
+Display documentation and exit. If this option appears after the name of a
+command, only the documentation for that command and any other user-supplied
+options is displayed. For example, "floor new --password --help" will show the
+documentation for the "new" command and the "--password" option.
 
 #### --gpg-args=_ARGUMENTS_ ("--encrypt") ####
 

@@ -4,7 +4,11 @@ printf "%s" \
 "Usage: $SELF COMMAND [OPTION]... [...]
 
 Commands:
-  help  Display this documentation and exit.
+  help [COMMAND_OR_OPTION]...
+        Display documentation and exit. If any command or option names are
+        given as arguments, only relevant documentation will be displayed. For
+        example, \"$SELF help package --secret\" will display documentation for
+        the \"package\" command and the \"--secret\" option.
   setup
         Generate the secret. This command fails if the secret file already
         exists. This must be run once before new volumes can be created.
@@ -40,7 +44,11 @@ Commands:
 
 Options (and Defaults):
   --help
-        Display this documentation and exit.
+        Display documentation and exit. If this option appears after the name
+        of a command, only the documentation for that command and any other
+        user-supplied options is displayed. For example, \"$SELF new --password
+        --help\" will show the documentation for the \"new\" command and the
+        \"--password\" option.
   --gpg-args=ARGUMENTS ($DEFAULT_GPG_ARGS)
         Set the command line arguments used with GPG by \"package gpg ...\".
   --mkfs=COMMAND ($DEFAULT_MKFS)
@@ -924,11 +932,52 @@ check_usage()
     done
 }
 
+# Display documentation.
+#
+# Arguments:
+# - $@: Optional list of topics for which documentation is displayed. These can
+#   be command names or option names with or without the leading dashes.
+#
+show_docs()
+(
+    test "$#" -eq 0 && usage && return
+
+    results="$(
+        for arg in "$@"; do
+            case "${arg:- }" in
+              # Map command aliases to canonical forms.
+              ls)       arg="list" ;;
+              umount)   arg="unmount" ;;
+
+              *[!0-9a-zA-Z-]*)
+                die "help: \"$arg\" is not a valid command or option name"
+              ;;
+            esac
+
+            # Get documentation the first time a topic is encountered.
+            case "${seen:=}" in *" $arg "*) continue ;; esac
+            seen="$seen $arg "
+            usage | sed -e "/^\\([^ ].*\\)*$/d" \
+                        -e "/^  -*$arg\\([,= ].*\\)*$/,/^  [^ ]/!d" \
+                        -e "/^  [^  ]/{/^  -*$arg\\([,= ].*\\)*$/!d;}"
+        done
+    )"
+
+    test -n "$results" && printf 'Results:\n%s\n' "$results" && return
+    die "help: nothing relevant found; try \"$SELF help\" without arguments"
+)
+
 # Parse the command line arguments and set the corresponding script variables.
 #
 argparse()
 {
     ARGC=0
+
+    if [ "${1:-}" = "help" ]; then
+        shift
+        show_docs "$@"
+        exit
+    fi
 
     while [ "$#" -gt 0 ]; do
         arg="$1" && shift
@@ -951,6 +1000,8 @@ argparse()
                      -e 's/^IS_SET_\([^=]*\)=.*/--\1?/p' \
             | tr "A-Z_\n" "a-z- "
         )"
+
+        test "$flag" = "--help" || help_topics="${help_topics:-} $flag"
 
         # The value of "$no_arg" causes certain patterns to (not) much which is
         # used to determine if a flag is valid and how to handle setting its
@@ -977,9 +1028,12 @@ argparse()
     done
 
     ARGN="$((ARGC - 1))"
-    unset arg flag no_arg options_done optspec suffix value
+    set -- ${help_topics:-}
+    unset arg flag help_topics no_arg options_done optspec suffix value
     test "$IS_SET_HELP" || return 0
-    usage
+
+    show_docs "${ARGV0:-XXX}" "$@"
+    exit
 }
 
 main()
@@ -1001,10 +1055,6 @@ main()
     fi
 
     case "$ARGV0" in
-      help)
-        usage
-      ;;
-
       setup)
         check_usage
 
