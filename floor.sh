@@ -1030,10 +1030,12 @@ argparse()
     ARGN="$((ARGC - 1))"
     set -- ${help_topics:-}
     unset arg flag help_topics no_arg options_done optspec suffix value
-    test "$IS_SET_HELP" || return 0
 
-    show_docs "${ARGV0:-XXX}" "$@"
-    exit
+    if [ "$IS_SET_HELP" ]; then
+        test "${ARGV0+defined}" && set -- "$ARGV0" "$@"
+        show_docs "$@"
+        exit
+    fi
 }
 
 main()
