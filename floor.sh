@@ -535,8 +535,8 @@ create_volume()
     test "$count" -ge 0 || die "the size \"$size\" caused an integer overflow"
     (set -o noclobber && > "$path")
     atexit 'rm -f "$path" "$symlink"
-            sudo -n cryptsetup close "$dm_device"
-            sudo -n losetup --detach="$loopback"'
+            test "$dm_device" && sudo -n cryptsetup close "$dm_device"
+            test "$loopback" && sudo -n losetup --detach="$loopback"'
 
     uuid="$(uuid $((IS_SET_PASSWORD ? UUID_VERSION_IF_NEEDS_PASSWORD : 4)))"
     key="$(key_for_uuid "$uuid" 1)"
@@ -595,8 +595,8 @@ mount_volume()
     mountpoint -q "$mount_point" && die "$mount_point: already a mount"
 
     atexit 'rm -f "$symlink"
-            sudo -n cryptsetup close "$dm_device"
-            sudo -n losetup --detach="$loopback"'
+            test "$dm_device" && sudo -n cryptsetup close "$dm_device"
+            test "$loopback" && sudo -n losetup --detach="$loopback"'
 
     # Support volume paths with whitespace. Copied from new_volume; see
     # comments there for details.
