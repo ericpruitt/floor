@@ -84,7 +84,7 @@ ALWAYS_BUILD:
 test-illegal-sudo-commands:
 	for command in $(ILLEGAL_SUDO_COMMANDS) ; do \
 		if eval "LC_ALL=C sudo -k -n $$command" </dev/null 2>&1 \
-		  | grep -q "a password is required"; then \
+		  | grep -q 'a password is required\|not allowed'; then \
 			echo "PASS: $$command"; \
 		else \
 			echo "FAIL: $$command" >&2; \

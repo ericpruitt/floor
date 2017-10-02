@@ -62,4 +62,5 @@ Cmnd_Alias FLOOR_COMMANDS_UNSAFE = \
     /sbin/mkfs.ext[234] * /dev/mapper/(FILENAME_PREFIX)-*[!a-fA-F0-9-]*, \
     /sbin/mkfs.ext[234] -E root_owner=*[!0-9\:]* -m *
 
-%floorusers ALL = NOPASSWD: FLOOR_COMMANDS_SAFE, PASSWD: FLOOR_COMMANDS_UNSAFE
+%floorusers ALL = NOPASSWD: FLOOR_COMMANDS_SAFE, ! FLOOR_COMMANDS_UNSAFE
+%sudo ALL = PASSWD: FLOOR_COMMANDS_UNSAFE
