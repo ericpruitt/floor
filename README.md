@@ -154,7 +154,10 @@ version is 0.
 
 #### mount _FILENAME_ _MOUNT_POINT_ ####
 
-Open and mount an encrypted volume.
+Open and mount an encrypted volume. If the file is not writeable by the current
+user or "--read-only" is used, the loopback device is created in read-only
+mode, and the filesystem is mounted in read-only mode with journal recovery
+disabled.
 
 #### list, ls ####
 
@@ -202,6 +205,11 @@ with this option enabled will be set to 0 which denotes the use of a password.
 #### --random=_FILENAME_ ("/dev/urandom") ####
 
 Source of random data used to generate the secret and UUIDs for new volumes.
+
+#### --read-only ####
+
+Mount volumes in read-only mode regardless of the underlying disk image's
+permissions.
 
 #### --root-owner=_UID:GID_ (`$UID:$GID`) ####
 

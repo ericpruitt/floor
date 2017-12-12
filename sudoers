@@ -28,7 +28,9 @@
 # variables from the Floor script before this file is installed.
 
 Cmnd_Alias FLOOR_COMMANDS_SAFE = \
-    /bin/mount (MOUNT_OPTIONS) /dev/mapper/(FILENAME_PREFIX)-?* *, \
+    /bin/mount -o (MOUNT_OPTIONS) /dev/mapper/(FILENAME_PREFIX)-?* *, \
+    /bin/mount -o (MOUNT_OPTIONS)\,(MOUNT_RDONLY_OPTIONS) \
+        /dev/mapper/(FILENAME_PREFIX)-?* *, \
     /bin/umount /dev/mapper/(FILENAME_PREFIX)-?*, \
     /sbin/cryptsetup --key-file=- --key-size=?* \
         --uuid=????????-????-????-????-???????????? luksFormat /dev/loop?*, \
@@ -36,9 +38,11 @@ Cmnd_Alias FLOOR_COMMANDS_SAFE = \
     /sbin/cryptsetup close [!-]*, \
     /sbin/cryptsetup status [!-]*, \
     /sbin/dmsetup ls --target=crypt, \
+    /sbin/dumpe2fs -h /dev/mapper/(FILENAME_PREFIX)-?*, \
     /sbin/losetup --associated=?* --noheadings --output=NAME, \
     /sbin/losetup --detach=/dev/loop?*, \
     /sbin/losetup --find --nooverlap --show *, \
+    /sbin/losetup --find --nooverlap --read-only --show *, \
     /sbin/mkfs.ext[234] -E root_owner=*?\:?* -m ?* -q \
         /dev/mapper/(FILENAME_PREFIX)-????????-????-????-????-????????????
 
@@ -54,8 +58,11 @@ Cmnd_Alias FLOOR_COMMANDS_UNSAFE = \
     /sbin/cryptsetup * open /dev/loop* -*, \
     /sbin/cryptsetup * open /dev/loop*[!0-9]* *, \
     /sbin/cryptsetup close *[[\:space\:]]*, \
+    /sbin/dumpe2fs -h /dev/mapper/(FILENAME_PREFIX)-*[[\:space\:]]*, \
     /sbin/losetup * --nooverlap --show *[[\:space\:]]*, \
     /sbin/losetup * --nooverlap --show -*, \
+    /sbin/losetup * --nooverlap --read-only --show *[[\:space\:]]*, \
+    /sbin/losetup * --nooverlap --read-only --show -*, \
     /sbin/losetup --associated=*[[\:space\:]]* * *, \
     /sbin/losetup --detach=/dev/loop*[!0-9]*, \
     /sbin/mkfs.ext[234] * -m *[[\:space\:]]* -q *, \

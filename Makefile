@@ -43,6 +43,8 @@ ILLEGAL_SUDO_COMMANDS = \
 	'losetup --detach=/dev/loopXXX' \
 	'losetup --find --nooverlap --show XXX XXX' \
 	'losetup --find --nooverlap --show -XXX' \
+	'losetup --find --nooverlap --read-only --show XXX XXX' \
+	'losetup --find --nooverlap --read-only --show -XXX' \
 	'mkfs.ext4 -E root_owner=XXX:XXX -m 1 -q /dev/mapper/floor-new.abc' \
 	'mkfs.ext4 -E root_owner=0:0 -m "XXX XXX" -q /dev/mapper/floor-new.abc' \
 	'mkfs.ext4 -E root_owner=0:0 -m 1 -q "/dev/mapper/floor-new-XXX XXX"' \

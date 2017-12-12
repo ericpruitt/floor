@@ -25,7 +25,10 @@ Commands:
         cryptsetup's \"--key-file\" option. The user will be prompted for a
         password if the UUID version is $UUID_VERSION_IF_NEEDS_PASSWORD.
   mount FILENAME MOUNT_POINT
-        Open and mount an encrypted volume.
+        Open and mount an encrypted volume. If the file is not writeable by the
+        current user or \"--read-only\" is used, the loopback device is created
+        in read-only mode, and the filesystem is mounted in read-only mode with
+        journal recovery disabled.
   list, ls
         Display information about all mounted volumes managed by Floor.
   unmount IDENTIFIER, umount ...
@@ -62,6 +65,9 @@ Options (and Defaults):
   --random=FILENAME ($DEFAULT_RANDOM)
         Source of random data used to generate the secret and UUIDs for new
         volumes.
+  --read-only
+        Mount volumes in read-only mode regardless of the underlying disk
+        image's permissions.
   --root-owner=UID:GID (\$UID:\$GID)
         Owner of the root directory of newly created volumes. This defaults to
         the UID and GID of the current user.
@@ -103,7 +109,9 @@ readonly FILENAME_PREFIX="floor"
 #   512-bit LUKS master key.
 readonly MINIMUM_SECRET_SIZE=50
 # - Options used when mounting a volume.
-readonly MOUNT_OPTIONS="-o noauto,nodev,nosuid"
+readonly MOUNT_OPTIONS="noauto,nodev,nosuid"
+# - Additional mount options used when mounting a volume in read-only mode.
+readonly MOUNT_RDONLY_OPTIONS="norecovery,ro"
 # - Checksum of the secret packaged with this script. This will be an empty
 #   string if there is no packaged secret.
 readonly SECRET_CHECKSUM=""
@@ -144,6 +152,7 @@ OPTION_SHA512=""
 #   IS_SET_... variables should only be initialized as empty strings.
 IS_SET_HELP=""
 IS_SET_PASSWORD=""
+IS_SET_READ_ONLY=""
 
 #                                     ---
 
@@ -594,6 +603,19 @@ mount_volume()
     test -d "$mount_point" || die "$mount_point: not a directory"
     mountpoint -q "$mount_point" && die "$mount_point: already a mount"
 
+    if [ "$IS_SET_READ_ONLY" ]; then
+        read_only="x"
+    elif ! [ -w "$path" ]; then
+        say "$path: file is not writable; mounting as read-only"
+        read_only="x"
+    elif ! printf "" 2>/dev/null >> "$path"; then
+        say "$path: file is writable but opening in append mode (O_APPEND)" \
+            "failed; mounting as read-only"
+        read_only="x"
+    else
+        read_only=""
+    fi
+
     atexit 'rm -f "$symlink"
             test "$dm_device" && sudo -n cryptsetup close "$dm_device"
             test "$loopback" && sudo -n losetup --detach="$loopback"'
@@ -607,7 +629,8 @@ mount_volume()
       *)                unset symlink ;;
     esac
 
-    loopback="$(sudo -n losetup --find --nooverlap --show "${symlink:-$path}")"
+    loopback="$(sudo -n losetup --find \
+        --nooverlap ${read_only:+--read-only} --show "${symlink:-$path}")"
     volume_action status "$loopback" && die "$path: volume is already open"
 
     uuid="$(cryptsetup luksUUID "$path")"
@@ -645,8 +668,18 @@ mount_volume()
         test "$cryptsetup_exit_status" -eq 5 && unset dm_device && continue
 
         test "$cryptsetup_exit_status" -eq 0 || return
-        sudo -n mount $MOUNT_OPTIONS "/dev/mapper/$dm_device" \
-            "${symlink:-$mount_point}"
+
+        if [ "$read_only" ] &&
+         sudo -n dumpe2fs -h "/dev/mapper/$dm_device" 2>&1 |
+          grep -F -q -w needs_recovery; then
+            say "$path: this volume has a filesystem journal that needs to" \
+            "be recovered, but the journal will not be loaded because the" \
+            "volume is being mounted in read-only mode; for more details," \
+            "search for \"norecovery\" in \"man 8 mount\""
+        fi
+
+        sudo -n mount -o $MOUNT_OPTIONS${read_only:+,$MOUNT_RDONLY_OPTIONS} \
+            "/dev/mapper/$dm_device" "${symlink:-$mount_point}"
         unset dm_device
         return
     done
