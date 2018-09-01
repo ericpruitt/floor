@@ -103,7 +103,7 @@ PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"
 # - This text is added to filenames to indicate they are used by or managed by
 #   this script.
 readonly FILENAME_PREFIX="floor"
-# - The size used for the generating secret cannot be set below this value. The
+# - The size used for the generated secret cannot be set below this value. The
 #   UUID consists of 118 bits of randomly generated data, and a secret of 50
 #   bytes totals 518 bits of entropy which is about the same length as the
 #   512-bit LUKS master key.
@@ -190,7 +190,7 @@ say()
     esac
 }
 
-# Generate and display a shell-safe representation of a string. The new string
+# Generate and display a sudo-safe representation of a string. The new string
 # is **not** quoted, just munged.
 #
 # Arguments:
@@ -1024,7 +1024,7 @@ argparse()
 
         test "$flag" = "--help" || show_docs_for="$show_docs_for $flag"
 
-        # This generate a whitespace separated list of the valid flag names
+        # This generates a whitespace separated list of the valid flag names
         # with options that take arguments ending in "=" while toggles end in
         # "?" e.g. "OPTION_ABC IS_SET_XYZ" become "--abc= --xyz?".
         test "${optspec+defined}" || optspec="$(
@@ -1034,8 +1034,8 @@ argparse()
             | tr "A-Z_\n" "a-z- "
         )"
 
-        # The value of "$no_arg" causes certain patterns to (not) much which is
-        # used to determine if a flag is valid and how to handle setting its
+        # The value of "$no_arg" causes certain patterns to (not) match which
+        # is used to determine if a flag is valid and how to handle setting its
         # value.
         suffix="$(say "${flag#??}" | tr a-z- A-Z_)"
         case " $optspec " in
