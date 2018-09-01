@@ -190,7 +190,7 @@ say()
     esac
 }
 
-# Generate and display a sudo-safe representation of a string. The new string
+# Generate and display a shell-safe representation of a string. The new string
 # is **not** quoted, just munged.
 #
 # Arguments:
@@ -201,7 +201,7 @@ munge()
     name="$1"
 
     test -n "$name" || die "cannot munge empty string"
-    name="$(raw "$name" | tr -d " \t\r\n" | sed "s/^-*//")"
+    name="$(raw "$name" | LC_ALL=C tr -dc "a-zA-Z0-9@_+.-" | sed "s/^-*//")"
     say "${name:-x}"
 )
 
